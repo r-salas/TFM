@@ -1,0 +1,10 @@
+tqdm
+torch
+numpy
+typer
+pandas
+Pillow
+torchvision
+torchmetrics
+scikit-learn
+pytorch-lightning

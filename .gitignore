@@ -127,3 +127,17 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# Datasets location
+data
+
+# Tensorboard logs
+*_logs
+
+# Mac junk
+.DS_Store
+
+# Pycharm junk
+.idea
+
+config.py
