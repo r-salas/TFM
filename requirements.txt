@@ -2,8 +2,10 @@ tqdm
 torch
 numpy
 typer
+kaggle
 pandas
 Pillow
+fastdl
 torchvision
 torchmetrics
 scikit-learn
