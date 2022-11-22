@@ -35,12 +35,25 @@ df = df.drop_duplicates("PatientID", keep="first")
 # Keep only interesting projections
 df = df[df["Projection"].isin(["AP", "AP_horizontal", "L", "PA"])]
 
-images_dirs_to_download = df["ImageDir"].unique()
+bad_images = [
+    "216840111366964013076187734852011291090445391_00-196-188.png",
+    "216840111366964012819207061112010281134410801_00-129-131.png",
+    "216840111366964012989926673512011151082430686_00-157-045.png",
+    "216840111366964013076187734852011297123949023_01-001-162.png",
+    "216840111366964013686042548532013283123624619_02-086-157.png",
+    "216840111366964012989926673512011083134050913_00-168-009.png",
+    "216840111366964012989926673512011074122523403_00-163-058.png",
+    "216840111366964012373310883942009117084022290_00-064-025.png"
+]
+df = df[~df["ImageID"].isin(bad_images)]
 
+images_dirs_to_download = df["ImageDir"].unique()
+"""
 for img_dir in images_dirs_to_download:
     path = fastdl.download(url_for_padchest(f"{img_dir}.zip"), extract=False, fname=f"{img_dir}.zip")
     images_to_extract = df[df["ImageDir"] == img_dir]["ImageID"].tolist()
     extract_zip(path, os.path.join(DATA_ROOT_DIR, "PadChest", str(img_dir)), images_to_extract)
+"""
 
 # Preprocess
 

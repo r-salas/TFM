@@ -6,11 +6,15 @@
 
 import os
 import gzip
+
+import numpy as np
 import torch
 import shutil
 import zipfile
+import pandas as pd
 
 from tqdm import tqdm
+from typing import Optional
 from PIL import Image, ImageMath
 
 
@@ -46,3 +50,29 @@ def extract_zip(path, target_dir, to_extract=None):
 
 def convert_I_to_L(im: Image):
     return ImageMath.eval('im >> 8', im=im.convert('I')).convert('L')
+
+
+def undersample(df, label_col, random_state: Optional[int] = None):
+    min_samples = df.groupby(label_col).size().min()
+
+    undersample_data = []
+    for label, label_df in df.groupby(label_col):
+        label_df = label_df.sample(min_samples, random_state=random_state)
+        undersample_data.append(label_df)
+
+    return pd.concat(undersample_data)
+
+
+def pil_grayscale_to_rgb(pil_img):
+    return pil_img.convert("RGB")
+
+
+def radimagenet_transforms(pil_img):
+    pil_img = pil_img.resize((224, 224), Image.ANTIALIAS)
+    img = np.asarray(pil_img)
+    img = (img - 127.5) * 2 / 255
+
+    if img.ndim == 2:
+        img = img[:, :, None]
+
+    return torch.from_numpy(img).contiguous().to(torch.float32)

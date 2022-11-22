@@ -2,11 +2,15 @@ tqdm
 torch
 numpy
 typer
+gdown
 kaggle
 pandas
 Pillow
 fastdl
+optuna
+onnx2torch
 torchvision
 torchmetrics
 scikit-learn
+python-dotenv
 pytorch-lightning
