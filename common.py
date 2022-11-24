@@ -23,11 +23,51 @@ from utils import pil_grayscale_to_rgb, radimagenet_transforms
 from datasets import NIHChestXrays, CheXpert, ChestXRaysIndianaUniversity
 
 
+def get_train_transform(transfer_learning_model):
+    if transfer_learning_model == "DenseNet-121-ImageNet":
+        return transforms.Compose([
+            pil_grayscale_to_rgb,
+            DenseNet121_Weights.IMAGENET1K_V1.transforms()
+        ])
+    elif transfer_learning_model == "ResNet-50-ImageNet":
+        return transforms.Compose([
+            pil_grayscale_to_rgb,
+            ResNet50_Weights.IMAGENET1K_V2.transforms()
+        ])
+    elif transfer_learning_model in ("DenseNet-121-RadImageNet", "ResNet-50-RadImageNet"):
+        return transforms.Compose([
+            pil_grayscale_to_rgb,
+            radimagenet_transforms
+        ])
+    else:
+        raise NotImplementedError()
+
+
+def get_test_transform(transfer_learning_model):
+    if transfer_learning_model == "DenseNet-121-ImageNet":
+        return transforms.Compose([
+            pil_grayscale_to_rgb,
+            DenseNet121_Weights.IMAGENET1K_V1.transforms()
+        ])
+    elif transfer_learning_model == "ResNet-50-ImageNet":
+        return transforms.Compose([
+            pil_grayscale_to_rgb,
+            ResNet50_Weights.IMAGENET1K_V2.transforms()
+        ])
+    elif transfer_learning_model in ("DenseNet-121-RadImageNet", "ResNet-50-RadImageNet"):
+        return transforms.Compose([
+            pil_grayscale_to_rgb,
+            radimagenet_transforms
+        ])
+    else:
+        raise NotImplementedError()
+
+
 def create_objective_func(dataset, num_epochs, device, max_train_samples, max_val_samples, num_workers, save_best,
                           early_stopping):
     def objective(trial: optuna.Trial) -> float:
         optimizer_type = trial.suggest_categorical("optimizer", ["SGD", "Adam", "RMSProp"])
-        learning_rate = trial.suggest_float("learning_rate", 1e-5, 1e-1)
+        learning_rate = trial.suggest_float("learning_rate", 1e-5, 1e-3)
 
         transfer_learning_model = trial.suggest_categorical("transfer_learning_model",
                                                             ["ResNet-50-ImageNet", "DenseNet-121-ImageNet",
@@ -35,35 +75,8 @@ def create_objective_func(dataset, num_epochs, device, max_train_samples, max_va
         transfer_learning_technique = trial.suggest_categorical("transfer_learning_technique",
                                                                 ["freeze_all", "unfreeze_all"])
 
-        if transfer_learning_model == "DenseNet-121-ImageNet":
-            train_transform = transforms.Compose([
-                pil_grayscale_to_rgb,
-                DenseNet121_Weights.IMAGENET1K_V1.transforms()
-            ])
-            val_transform = transforms.Compose([
-                pil_grayscale_to_rgb,
-                DenseNet121_Weights.IMAGENET1K_V1.transforms()
-            ])
-        elif transfer_learning_model == "ResNet-50-ImageNet":
-            train_transform = transforms.Compose([
-                pil_grayscale_to_rgb,
-                ResNet50_Weights.IMAGENET1K_V2.transforms()
-            ])
-            val_transform = transforms.Compose([
-                pil_grayscale_to_rgb,
-                ResNet50_Weights.IMAGENET1K_V2.transforms()
-            ])
-        elif transfer_learning_model in ("DenseNet-121-RadImageNet", "ResNet-50-RadImageNet"):
-            train_transform =  transforms.Compose([
-                pil_grayscale_to_rgb,
-                radimagenet_transforms
-            ])
-            val_transform = transforms.Compose([
-                pil_grayscale_to_rgb,
-                radimagenet_transforms
-            ])
-        else:
-            raise NotImplementedError()
+        train_transform = get_train_transform(transfer_learning_model)
+        val_transform = get_test_transform(transfer_learning_model)
 
         # FIXME: split is missing test samples
         if dataset == "ap_vs_pa":
@@ -91,17 +104,26 @@ def create_objective_func(dataset, num_epochs, device, max_train_samples, max_va
             raise NotImplementedError()
 
         if max_train_samples is not None:
-            train_dataset = Subset(train_dataset, range(0, max_train_samples))
+            train_samples = min(max_train_samples, len(train_dataset))
+            train_dataset = Subset(train_dataset, range(0, train_samples))
 
         if max_val_samples is not None:
-            val_dataset = Subset(val_dataset, range(0, max_val_samples))
+            val_samples = min(max_val_samples, len(val_dataset))
+            val_dataset = Subset(val_dataset, range(0, val_samples))
 
         train_loader = DataLoader(train_dataset, batch_size=64, num_workers=num_workers, persistent_workers=True)
         val_loader = DataLoader(val_dataset, batch_size=64, num_workers=num_workers, persistent_workers=True)
 
-        model = Model(optimizer_type, learning_rate, transfer_learning_model, transfer_learning_technique)
+        if dataset == "ap_vs_pa":
+            names = ["AP", "PA"]
+        elif dataset == "frontal_vs_lateral":
+            names = ["Frontal", "Lateral"]
+        else:
+            raise NotImplementedError()
 
-        tensorboard_logger = TensorBoardLogger(save_dir=dataset + "_logs")
+        model = Model(optimizer_type, learning_rate, transfer_learning_model, transfer_learning_technique, names)
+
+        tensorboard_logger = TensorBoardLogger(save_dir=os.path.join("logs", dataset))
         tensorboard_logger.log_hyperparams({
             "optimizer_type": optimizer_type,
             "learning_rate": learning_rate,

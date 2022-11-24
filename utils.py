@@ -75,4 +75,4 @@ def radimagenet_transforms(pil_img):
     if img.ndim == 2:
         img = img[:, :, None]
 
-    return torch.from_numpy(img).contiguous().to(torch.float32)
+    return torch.from_numpy(img).to(torch.float32)

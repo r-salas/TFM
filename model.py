@@ -4,11 +4,19 @@
 #
 #
 
+import io
 import os
 import onnx2torch
+import numpy as np
 import torchmetrics
+import pandas as pd
+import seaborn as sns
+import torchvision.transforms.functional
+
+from PIL import Image
 import pytorch_lightning as pl
 import torch.nn.functional as F
+import matplotlib.pyplot as plt
 
 from torch import optim, nn
 from config import DATA_ROOT_DIR
@@ -17,9 +25,10 @@ from torchvision.models import densenet121, resnet50, DenseNet121_Weights, ResNe
 
 class Model(pl.LightningModule):
 
-    def __init__(self, optimizer_type, learning_rate, transfer_learning_model, transfer_learning_technique):
+    def __init__(self, optimizer_type, learning_rate, transfer_learning_model, transfer_learning_technique, names):
         super().__init__()
 
+        self.names = names
         self.optimizer_type = optimizer_type
         self.learning_rate = learning_rate
         self.transfer_learning_model = transfer_learning_model
@@ -79,9 +88,16 @@ class Model(pl.LightningModule):
 
         self.net = base_model
 
-        self.train_accuracy = torchmetrics.Accuracy()
-        self.val_accuracy = torchmetrics.Accuracy()
-        self.test_accuracy = torchmetrics.Accuracy()
+        self.train_accuracy = torchmetrics.Accuracy(num_classes=2)
+
+        self.val_accuracy = torchmetrics.Accuracy(num_classes=2)
+        self.val_conf_matrix = torchmetrics.ConfusionMatrix(num_classes=2)
+
+        self.test_accuracy = torchmetrics.Accuracy(num_classes=2)
+        self.test_accuracy_per_class = torchmetrics.ClasswiseWrapper(
+            torchmetrics.Accuracy(num_classes=2, average=None),
+            labels=names
+        )
 
     def forward(self, x):
         x = self.net(x)
@@ -100,20 +116,45 @@ class Model(pl.LightningModule):
     def validation_step(self, batch, batch_idx):
         y_hat = self(batch[0])
         loss = F.cross_entropy(y_hat, batch[1])
+
         self.val_accuracy(y_hat, batch[1])
+        self.val_conf_matrix(y_hat.argmax(1), batch[1])
         self.log("val_loss", loss)
 
     def validation_epoch_end(self, outputs):
         self.log("val_acc", self.val_accuracy)
 
+        # Confusion matrix
+        cm = self.val_conf_matrix.compute().detach().cpu().numpy().astype(int)
+        cm = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
+
+        df_cm = pd.DataFrame(cm, index=self.names, columns=self.names)
+        fig, ax = plt.subplots(figsize=(10, 5))
+        sns.heatmap(df_cm, annot=True, annot_kws={"size": 16}, ax=ax)
+        buf = io.BytesIO()
+        plt.savefig(buf, format='png')
+        buf.seek(0)
+        plt.close(fig)
+        im = torchvision.transforms.functional.to_tensor(Image.open(buf))
+
+        if not self.trainer.sanity_checking:
+            self.logger.experiment.add_image("val_confusion_matrix", im, global_step=self.current_epoch)
+
+        self.val_conf_matrix.reset()
+
     def test_step(self, batch, batch_idx):
         y_hat = self(batch[0])
         loss = F.cross_entropy(y_hat, batch[1])
-        self.test_accuracy(y_hat, batch[1])
+        self.test_accuracy(y_hat.argmax(1), batch[1])
+        self.test_accuracy_per_class(y_hat.argmax(1), batch[1])
         self.log("test_loss", loss)
 
     def test_epoch_end(self, outputs):
-        self.log("test_acc", self.test_accuracy)
+        self.log("test_accuracy", self.test_accuracy)
+        for key, value in self.test_accuracy_per_class.compute().items():
+            self.log("test_" + key, value)
+
+        self.test_accuracy_per_class.reset()
 
     def configure_optimizers(self):
         if self.optimizer_type == "Adam":
