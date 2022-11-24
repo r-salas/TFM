@@ -4,24 +4,31 @@
 #
 #
 
+import os
 import torch
+import fastdl
 import streamlit as st
 import plotly.graph_objects as go
 
 from PIL import Image
 from model import Model
-from common import get_test_transform
+from config import DATA_ROOT_DIR
 from utils import convert_I_to_L
+from common import get_test_transform
 
 
 @st.cache(allow_output_mutation=True)
 def get_ap_vs_pa_model():
-    return Model.load_from_checkpoint("runs/ap_vs_pa/9/epoch=0-step=313.ckpt").eval()
+    path = fastdl.download("https://github.com/r-salas/TFM/releases/download/2022.11.24/ap_vs_pa.ckpt",
+                           dir_prefix=os.path.join(DATA_ROOT_DIR, "checkpoints", "2022.11.24"))
+    return Model.load_from_checkpoint(path).eval()
 
 
 @st.cache(allow_output_mutation=True)
 def get_frontal_vs_lateral_model():
-    return Model.load_from_checkpoint("runs/frontal_vs_lateral/0/epoch=3-step=1252.ckpt").eval()
+    path = fastdl.download("https://github.com/r-salas/TFM/releases/download/2022.11.24/frontal_vs_lateral.ckpt",
+                           dir_prefix=os.path.join(DATA_ROOT_DIR, "checkpoints", "2022.11.24"))
+    return Model.load_from_checkpoint(path).eval()
 
 
 st.set_page_config(layout="wide")
