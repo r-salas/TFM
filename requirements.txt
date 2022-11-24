@@ -8,7 +8,11 @@ pandas
 Pillow
 fastdl
 optuna
+plotly
+seaborn
+streamlit
 onnx2torch
+matplotlib
 torchvision
 torchmetrics
 scikit-learn
