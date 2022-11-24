@@ -140,6 +140,4 @@ data
 # Pycharm junk
 .idea
 
-config.py
-
 runs
