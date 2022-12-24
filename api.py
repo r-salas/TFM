@@ -21,6 +21,8 @@ from models import ClassificationModel, AutoEncoderModel
 
 FRONTAL_LATERAL_CHECKPOINT_URL = "https://github.com/r-salas/TFM/releases/download/2022.11.24/frontal_vs_lateral.ckpt"
 AP_PA_CHECKPOINT_URL = "https://github.com/r-salas/TFM/releases/download/2022.11.24/ap_vs_pa.ckpt"
+CHEST_XRAY_OR_NOT_AUTOENCODER_CHECKPOINT_URL = "https://github.com/r-salas/TFM/releases/download/2022.12.24/chest-xray-or-not__autoencoder.ckpt"
+CHEST_XRAY_OR_NOT_META_CHECKPOINT_URL = "https://github.com/r-salas/TFM/releases/download/2022.12.24/chest-xray-or-not__meta.json"
 
 
 def _load_img_if_needed(img: Union[str, Image.Image, np.ndarray]) -> Image.Image:
@@ -111,12 +113,13 @@ class ChestXrayOrNotClassifier:
             device = get_default_device()
 
         if autoencoder_checkpoint_path is None:
-            autoencoder_checkpoint_path = os.path.join(DATA_ROOT_DIR, "checkpoints", "2022.12.21",
-                                                       "chest-xray-or-not__autoencoder.ckpt")
+            autoencoder_checkpoint_path = fastdl.download(CHEST_XRAY_OR_NOT_AUTOENCODER_CHECKPOINT_URL,
+                                                          dir_prefix=os.path.join(DATA_ROOT_DIR, "checkpoints",
+                                                                                  "2022.12.24"))
 
         if meta_checkpoint_path is None:
-            meta_checkpoint_path = os.path.join(DATA_ROOT_DIR, "checkpoints", "2022.12.21",
-                                                "chest-xray-or-not__meta.json")
+            meta_checkpoint_path = fastdl.download(CHEST_XRAY_OR_NOT_META_CHECKPOINT_URL,
+                                                   dir_prefix=os.path.join(DATA_ROOT_DIR, "checkpoints", "2022.12.24"))
 
         self.device = device
 
