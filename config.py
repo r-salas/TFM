@@ -4,6 +4,13 @@
 #
 #
 
+try:
+    from dotenv import load_dotenv
+except ImportError:
+    pass
+else:
+    load_dotenv()
+
 import os
 
 HERE = os.path.dirname(os.path.realpath(__file__))
