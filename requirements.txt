@@ -1,4 +1,5 @@
 tqdm
+h5py
 torch
 numpy
 typer
@@ -9,6 +10,8 @@ Pillow
 fastdl
 optuna
 plotly
+joblib
+pydicom
 seaborn
 streamlit
 onnx2torch

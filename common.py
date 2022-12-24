@@ -18,7 +18,7 @@ from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 from torchvision.models import DenseNet121_Weights, ResNet50_Weights
 
-from model import Model
+from models import ClassificationModel
 from utils import pil_grayscale_to_rgb, radimagenet_transforms
 from datasets import NIHChestXrays, CheXpert, ChestXRaysIndianaUniversity
 
@@ -121,7 +121,8 @@ def create_objective_func(dataset, num_epochs, device, max_train_samples, max_va
         else:
             raise NotImplementedError()
 
-        model = Model(optimizer_type, learning_rate, transfer_learning_model, transfer_learning_technique, names)
+        model = ClassificationModel(optimizer_type, learning_rate, transfer_learning_model,
+                                    transfer_learning_technique, names)
 
         tensorboard_logger = TensorBoardLogger(save_dir=os.path.join("logs", dataset))
         tensorboard_logger.log_hyperparams({

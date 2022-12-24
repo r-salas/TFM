@@ -5,17 +5,17 @@
 #
 
 import os
-
+import h5py
 import numpy as np
 import pandas as pd
 
 from PIL import Image
 from torch.utils.data import Dataset
-from typing import Callable, Optional
+from typing import Callable, Optional, Sequence
 from sklearn.model_selection import train_test_split
 
 from config import DATA_ROOT_DIR
-from utils import convert_I_to_L, undersample
+from utils import undersample
 
 
 class NIHChestXrays(Dataset):
@@ -25,46 +25,49 @@ class NIHChestXrays(Dataset):
 
     names = ["AP", "PA"]
 
-    def __init__(self, transform: Optional[Callable] = None, split: Optional[str] = None, undersampling: bool = False):
-        assert split in ("train", "val", "test", None), f"Invalid `split` {split}"
+    def __init__(self, transform: Optional[Callable] = None, undersampling: bool = False, split: Optional[str] = None):
+        assert split in ("train", "val", None), f"Invalid `split` {split}"
 
         self.split = split
         self.transform = transform
 
-        data = pd.read_pickle(os.path.join(DATA_ROOT_DIR, "nih-chest-xrays", "data",
-                                           "Data_Entry_2017.pkl"))
+        with h5py.File(os.path.join(DATA_ROOT_DIR, "nih-chest-xrays", "nih-chest-xrays.h5"), "r") as f:
+            self.labels = pd.Series(f["labels"][:])
+
+        if split is not None:
+            indices = np.arange(len(self.labels))
+            train_indices, val_indices = train_test_split(indices, test_size=0.25, random_state=42)
+
+            if split == "train":
+                self.labels = self.labels.iloc[train_indices]
+            elif split == "val":
+                self.labels = self.labels.iloc[val_indices]
 
         if undersampling:
-            data = undersample(data, "label", random_state=42)
+            self.labels = undersample(self.labels, random_state=42)
 
-        indices = np.arange(len(data))
-        train_indices, valtest_indices = train_test_split(indices, test_size=0.4, random_state=42)
-        val_indices, test_indices = train_test_split(valtest_indices, test_size=0.5, random_state=42)
-
-        if split == "train":
-            data = data.iloc[train_indices]
-        elif split == "val":
-            data = data.iloc[val_indices]
-        elif split == "test":
-            data = data.iloc[test_indices]
-
-        self.data = data
-
-    def count(self):
-        return self.data.groupby("label").size()
+        self.file = None
 
     def __getitem__(self, index):
-        row = self.data.iloc[index]
+        if self.file is None:
+            self.file = h5py.File(os.path.join(DATA_ROOT_DIR, "nih-chest-xrays", "nih-chest-xrays.h5"), "r")
 
-        img = Image.open(row["path"]).convert("L")
+        orig_index = self.labels.index[index]
+
+        img = Image.fromarray(self.file["data"][orig_index])
+        label = self.file["labels"][orig_index]
 
         if self.transform is not None:
             img = self.transform(img)
 
-        return img, row["label"]
+        return img, label
 
     def __len__(self):
-        return len(self.data)
+        return len(self.labels)
+
+    def __del__(self):
+        if self.file is not None:
+            self.file.close()
 
 
 class ChestXRaysIndianaUniversity(Dataset):
@@ -74,46 +77,52 @@ class ChestXRaysIndianaUniversity(Dataset):
 
     names = ["frontal", "lateral"]
 
-    def __init__(self, transform: Optional[Callable] = None, split: Optional[str] = None, undersampling: bool = False):
-        assert split in ("train", "val", "test", None), f"Invalid `split` {split}"
+    def __init__(self, transform: Optional[Callable] = None, undersampling: bool = False, split: Optional[str] = None):
+        assert split in ("train", "val", None), f"Invalid `split` {split}"
 
-        self.split = split
         self.transform = transform
+        self.undersampling = undersampling
+        self.split = split
 
-        data = pd.read_pickle(os.path.join(DATA_ROOT_DIR, "raddar", "chest-xrays-indiana-university",
-                                           "indiana_projections.pkl"))
+        with h5py.File(os.path.join(DATA_ROOT_DIR, "chest-xrays-indiana-university",
+                                    "chest-xrays-indiana-university.h5"), "r") as f:
+            self.labels = pd.Series(f["labels"][:])
+
+        if split is not None:
+            indices = np.arange(len(self.labels))
+            train_indices, val_indices = train_test_split(indices, test_size=0.25, random_state=42)
+
+            if split == "train":
+                self.labels = self.labels.iloc[train_indices]
+            elif split == "val":
+                self.labels = self.labels.iloc[val_indices]
 
         if undersampling:
-            data = undersample(data, "label", random_state=42)
+            self.labels = undersample(self.labels, random_state=42)
 
-        indices = np.arange(len(data))
-        train_indices, valtest_indices = train_test_split(indices, test_size=0.4, random_state=0)
-        val_indices, test_indices = train_test_split(valtest_indices, test_size=0.5, random_state=0)
-
-        if split == "train":
-            data = data.iloc[train_indices]
-        elif split == "val":
-            data = data.iloc[val_indices]
-        elif split == "test":
-            data = data.iloc[test_indices]
-
-        self.data = data
-
-    def count(self):
-        return self.data.groupby("label").size()
+        self.file = None
 
     def __getitem__(self, index):
-        row = self.data.iloc[index]
+        if self.file is None:
+            self.file = h5py.File(os.path.join(DATA_ROOT_DIR, "chest-xrays-indiana-university",
+                                               "chest-xrays-indiana-university.h5"), "r")
 
-        img = Image.open(row["path"]).convert("L")
+        orig_index = self.labels.index[index]
+
+        img = Image.fromarray(self.file["data"][orig_index])
+        label = self.file["labels"][orig_index]
 
         if self.transform is not None:
             img = self.transform(img)
 
-        return img, row["label"]
+        return img, label
 
     def __len__(self):
-        return len(self.data)
+        return len(self.labels)
+
+    def __del__(self):
+        if self.file is not None:
+            self.file.close()
 
 
 class PadChest(Dataset):
@@ -123,71 +132,42 @@ class PadChest(Dataset):
 
     names = ["AP", "PA", "AP-horizontal", "lateral"]
 
-    def __init__(self, transform: Optional[Callable] = None, split: Optional[str] = None, goal: Optional[str] = None,
-                 undersampling: bool = False):
-        assert split in ("train", "val", "test", None), f"Invalid `split` {split}"
-        assert goal in ("ap_vs_pa", "frontal_vs_lateral", None), f"Invalid `goal` {goal}"
-
-        self.goal = goal
-        self.split = split
+    def __init__(self, transform: Optional[Callable] = None, undersampling: bool = False,
+                 exclude_labels: Optional[Sequence[int]] = None):
         self.transform = transform
+        self.exclude_labels = exclude_labels
 
-        data = pd.read_pickle(os.path.join(DATA_ROOT_DIR, "PadChest",
-                                           "PADCHEST_chest_x_ray_images_labels_160K_01.02.19.pkl"))
+        with h5py.File(os.path.join(DATA_ROOT_DIR, "PadChest", "padchest.h5"), "r") as f:
+            self.labels = pd.Series(f["labels"][:])
 
-        if goal == "ap_vs_pa":
-            data = data[data["label"].isin([0, 1, 2])]
-            data["label"] = data["label"].replace({
-                0: 0,
-                1: 1,
-                2: 0
-            })
-            self.names = ["AP", "PA"]
-        elif goal == "frontal_vs_lateral":
-            data["label"] = data["label"].replace({
-                0: 0,
-                1: 0,
-                2: 0,
-                3: 1
-            })
-            self.names = ["frontal", "lateral"]
+        if exclude_labels is not None:
+            self.labels = self.labels[~self.labels.isin(exclude_labels)]
 
         if undersampling:
-            data = undersample(data, "label", random_state=42)
+            self.labels = undersample(self.labels, random_state=42)
 
-        indices = np.arange(len(data))
-        train_indices, valtest_indices = train_test_split(indices, test_size=0.4, random_state=0)
-        val_indices, test_indices = train_test_split(valtest_indices, test_size=0.5, random_state=0)
-
-        if split == "train":
-            data = data.iloc[train_indices]
-        elif split == "val":
-            data = data.iloc[val_indices]
-        elif split == "test":
-            data = data.iloc[test_indices]
-
-        self.data = data
-
-    def count(self):
-        return self.data.groupby("label").size()
+        self.file = None
 
     def __getitem__(self, index):
-        row = self.data.iloc[index]
+        if self.file is None:
+            self.file = h5py.File(os.path.join(DATA_ROOT_DIR, "PadChest", "padchest.h5"), "r")
 
-        try:
-            img = Image.open(row["path"])
-            img = convert_I_to_L(img)
-        except Exception as e:
-            print(row["path"])
-            raise e
+        orig_index = self.labels.index[index]
+
+        img = Image.fromarray(self.file["data"][orig_index])
+        label = self.file["labels"][orig_index]
 
         if self.transform is not None:
             img = self.transform(img)
 
-        return img, row["label"]
+        return img, label
 
     def __len__(self):
-        return len(self.data)
+        return len(self.labels)
+
+    def __del__(self):
+        if self.file is not None:
+            self.file.close()
 
 
 class CheXpert(Dataset):
@@ -197,56 +177,128 @@ class CheXpert(Dataset):
 
     names = ["AP", "PA", "lateral"]
 
-    def __init__(self, transform: Optional[Callable] = None, split: Optional[str] = None, goal: Optional[str] = None,
-                 undersampling: bool = False):
-        assert split in ("train", "val", "test", None), f"Invalid `split` {split}"
-        assert goal in ("ap_vs_pa", "frontal_vs_lateral", None), f"Invalid `goal` {goal}"
+    def __init__(self, transform: Optional[Callable] = None, undersampling: bool = False,
+                 exclude_labels: Optional[Sequence[int]] = None, split: Optional[str] = None):
+        assert split in ("train", "val", None), f"Invalid `split` {split}"
 
-        self.goal = goal
-        self.split = split
         self.transform = transform
+        self.undersampling = undersampling
 
-        data = pd.read_pickle(os.path.join(DATA_ROOT_DIR, "CheXpert", "data.pkl"))
+        with h5py.File(os.path.join(DATA_ROOT_DIR, "CheXpert", "chexpert.h5"), "r") as f:
+            self.labels = pd.Series(f["labels"][:])
 
-        if goal == "ap_vs_pa":
-            data = data[data["label"].isin([0, 1])]
-            self.names = ["AP", "PA"]
-        elif goal == "frontal_vs_lateral":
-            data["label"] = data["label"].replace({
-                0: 0,
-                1: 0,
-                2: 1
-            })
-            self.names = ["frontal", "lateral"]
+        if split is not None:
+            indices = np.arange(len(self.labels))
+            train_indices, val_indices = train_test_split(indices, test_size=0.25, random_state=42)
+
+            if split == "train":
+                self.labels = self.labels.iloc[train_indices]
+            elif split == "val":
+                self.labels = self.labels.iloc[val_indices]
+
+        if exclude_labels is not None:
+            self.labels = self.labels[~self.labels.isin(exclude_labels)]
 
         if undersampling:
-            data = undersample(data, "label", random_state=42)
+            self.labels = undersample(self.labels, random_state=42)
 
-        indices = np.arange(len(data))
-        train_indices, valtest_indices = train_test_split(indices, test_size=0.4, random_state=0)
-        val_indices, test_indices = train_test_split(valtest_indices, test_size=0.5, random_state=0)
-
-        if split == "train":
-            data = data.iloc[train_indices]
-        elif split == "val":
-            data = data.iloc[val_indices]
-        elif split == "test":
-            data = data.iloc[test_indices]
-
-        self.data = data
-
-    def count(self):
-        return self.data.groupby("label").size()
+        self.file = None
 
     def __getitem__(self, index):
-        row = self.data.iloc[index]
+        if self.file is None:
+            self.file = h5py.File(os.path.join(DATA_ROOT_DIR, "CheXpert", "chexpert.h5"), "r")
 
-        img = Image.open(row["path"]).convert("L")
+        orig_index = self.labels.index[index]
+
+        img = Image.fromarray(self.file["data"][orig_index])
+        label = self.file["labels"][orig_index]
 
         if self.transform is not None:
             img = self.transform(img)
 
-        return img, row["label"]
+        return img, label
 
     def __len__(self):
-        return len(self.data)
+        return len(self.labels)
+
+    def __del__(self):
+        if self.file is not None:
+            self.file.close()
+
+
+class UNIFESPXrayBodyPart(Dataset):
+    """
+    https://www.kaggle.com/competitions/unifesp-x-ray-body-part-classifier
+    """
+
+    names = ['Abdomen', 'Ankle', 'Cervical Spine', 'Chest', 'Clavicles', 'Elbow', 'Feet', 'Finger', 'Forearm', 'Hand',
+             'Hip', 'Knee', 'Lower Leg', 'Lumbar Spine', 'Others', 'Pelvis', 'Shoulder', 'Sinus', 'Skull', 'Thigh',
+             'Thoracic Spine', 'Wrist']
+
+    def __init__(self, transform: Optional[Callable] = None, exclude_labels: Optional[Sequence[int]] = None):
+        self.transform = transform
+        self.exclude_labels = exclude_labels
+
+        with h5py.File(os.path.join(DATA_ROOT_DIR, "unifesp-x-ray-body-part-classifier",
+                                    "unifesp-x-ray-body-part-classifier.h5"), "r") as f:
+            self.labels = pd.Series(f["labels"][:])
+
+        if exclude_labels is not None:
+            def filter_fn(label_str):
+                return any([int(x) in exclude_labels for x in label_str.decode().split(";")])
+            self.labels = self.labels[~self.labels.apply(filter_fn)]
+
+        self.file = None
+
+    def __getitem__(self, index):
+        if self.file is None:
+            self.file = h5py.File(os.path.join(DATA_ROOT_DIR, "unifesp-x-ray-body-part-classifier",
+                                               "unifesp-x-ray-body-part-classifier.h5"), "r")
+
+        orig_index = self.labels.index[index]
+
+        img = Image.fromarray(self.file["data"][orig_index])
+        label = self.file["labels"][orig_index].decode()
+
+        if self.transform is not None:
+            img = self.transform(img)
+
+        return img, label
+
+    def __len__(self):
+        return len(self.labels)
+
+    def __del__(self):
+        if self.file is not None:
+            self.file.close()
+
+
+class MiniImagenet(Dataset):
+
+    def __init__(self, transform: Optional[Callable] = None):
+        self.transform = transform
+
+        with h5py.File(os.path.join(DATA_ROOT_DIR, "mini-imagenet",
+                                    "mini-imagenet.h5"), "r") as f:
+            self.length = len(f["data"])
+
+        self.file = None
+
+    def __getitem__(self, index):
+        if self.file is None:
+            self.file = h5py.File(os.path.join(DATA_ROOT_DIR, "mini-imagenet",
+                                               "mini-imagenet.h5"), "r")
+
+        img = Image.fromarray(self.file["data"][index])
+
+        if self.transform is not None:
+            img = self.transform(img)
+
+        return img, np.float32(np.nan)
+
+    def __len__(self):
+        return self.length
+
+    def __del__(self):
+        if self.file is not None:
+            self.file.close()

@@ -4,11 +4,16 @@
 #
 #
 
+import io
 import os
+import h5py
 import fastdl
+import zipfile
+import numpy as np
 import pandas as pd
 
-from utils import extract_zip
+from PIL import Image
+from tqdm import tqdm
 from config import DOWNLOADS_ROOT_DIR, DATA_ROOT_DIR
 
 
@@ -20,25 +25,40 @@ download_path = fastdl.download("https://us13.mailchimp.com/mctx/clicks?url=http
                                 "55365305&pool=contact_facing&subject=CheXpert-v1.0%3A+Subscription+Confirmed",
                                 fname="data.zip")
 
-extract_dir = os.path.join(DATA_ROOT_DIR, "CheXpert")
-extract_zip(download_path, extract_dir)
+with (zipfile.ZipFile(download_path) as archive,
+      h5py.File(os.path.join(DATA_ROOT_DIR, "chexpert", "chexpert.h5"), "w") as hdf5_file):
+    train_meta_data = archive.read(os.path.join("CheXpert-v1.0-small", "train.csv"))
+    valid_meta_data = archive.read(os.path.join("CheXpert-v1.0-small", "valid.csv"))
 
-train_df = pd.read_csv(os.path.join(extract_dir, "CheXpert-v1.0-small", "train.csv"))
-valid_df = pd.read_csv(os.path.join(extract_dir, "CheXpert-v1.0-small", "valid.csv"))
+    train_meta_bytes = io.BytesIO(train_meta_data)
+    valid_meta_bytes = io.BytesIO(valid_meta_data)
 
-df = pd.concat([train_df, valid_df])
+    train_meta = pd.read_csv(train_meta_bytes)
+    valid_meta = pd.read_csv(valid_meta_bytes)
 
-df["patient_id"] = df["Path"].str.extract(r"patient(\d+)")
+    meta = pd.concat([train_meta, valid_meta])
 
-df = df.drop_duplicates(["patient_id", "AP/PA"])
+    meta["patient_id"] = meta["Path"].str.extract(r"patient(\d+)")
 
-name_to_label = {
-    "AP": 0,
-    "PA": 1,
-    "Lateral": 2
-}
-df["label"] = df["AP/PA"].fillna("Lateral").replace(name_to_label)
-df = df[df["label"].isin([0, 1, 2])]
-df["path"] = os.path.join(extract_dir) + os.path.sep + df["Path"]
+    meta = meta.drop_duplicates(["patient_id", "AP/PA"])
 
-df[["path", "label"]].to_pickle(os.path.join(extract_dir, "data.pkl"))
+    name_to_label = {
+        "AP": 0,
+        "PA": 1,
+        "Lateral": 2
+    }
+    meta["label"] = meta["AP/PA"].fillna("Lateral").replace(name_to_label)
+    meta = meta[meta["label"].isin([0, 1, 2])]
+
+    data = hdf5_file.create_dataset("data", shape=(len(train_meta) + len(valid_meta), 256, 256), dtype="uint8")
+    labels = hdf5_file.create_dataset("labels", shape=(len(train_meta) + len(valid_meta)), dtype="int")
+
+    for index, row in enumerate(tqdm(meta.itertuples(index=False), total=len(meta))):
+        img_data = archive.read(row.Path)
+        img_bytes = io.BytesIO(img_data)
+
+        pil_img = Image.open(img_bytes).convert("L")
+        pil_img = pil_img.resize((256, 256), Image.Resampling.LANCZOS)
+
+        data[index] = np.asarray(pil_img).astype("uint8")
+        labels[index] = row.label

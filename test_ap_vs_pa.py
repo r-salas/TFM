@@ -14,7 +14,7 @@ else:
 import typer
 import pytorch_lightning as pl
 
-from model import Model
+from models import ClassificationModel
 from torchvision import transforms
 from utils import get_default_device
 from torch.utils.data import DataLoader
@@ -25,7 +25,7 @@ from utils import pil_grayscale_to_rgb, radimagenet_transforms
 
 
 def main(checkpoint_path, device: str = typer.Argument(get_default_device), num_workers: int = 10):
-    model = Model.load_from_checkpoint(checkpoint_path)
+    model = ClassificationModel.load_from_checkpoint(checkpoint_path)
 
     if model.transfer_learning_model == "DenseNet-121-ImageNet":
         transform = transforms.Compose([

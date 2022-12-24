@@ -3,68 +3,55 @@
 #   Download NIH chest X-rays
 #
 #
-
+import io
 import os
-import glob
+
+import h5py
+import zipfile
 import kaggle.api
+import numpy as np
 import pandas as pd
 
 from tqdm import tqdm
-from utils import extract_zip
+from PIL import Image
 from config import DOWNLOADS_ROOT_DIR, DATA_ROOT_DIR
 
-data_path = os.path.join(DATA_ROOT_DIR, "nih-chest-xrays", "data")
+data_path = os.path.join(DATA_ROOT_DIR, "nih-chest-xrays")
 download_path = os.path.join(DOWNLOADS_ROOT_DIR, "nih-chest-xrays", "data")
+
+os.makedirs(data_path, exist_ok=True)
 
 kaggle.api.dataset_download_files("nih-chest-xrays/data", download_path, quiet=False)
 
-extract_zip(os.path.join(download_path, "data.zip"), data_path, [
-    "Data_Entry_2017.csv",
-    "images_001/",
-    "images_002/",
-    "images_003/",
-    "images_004/",
-    "images_005/",
-    "images_006/",
-    "images_007/",
-    "images_008/",
-    "images_009/",
-    "images_010/",
-    "images_011/",
-])
+with (zipfile.ZipFile(os.path.join(download_path, "data.zip")) as archive,
+      h5py.File(os.path.join(data_path, "nih-chest-xrays.h5"), "w") as hdf5_file):
+    meta_data = archive.read("Data_Entry_2017.csv")
+    meta_bytes = io.BytesIO(meta_data)
+    meta = pd.read_csv(meta_bytes, index_col="Image Index")
 
-# Preprocess
+    img_paths = []
+    for archive_file in archive.infolist():
+        if archive_file.filename.endswith(".png"):
+            img_paths.append(archive_file.filename)
 
-meta = pd.read_csv(os.path.join(data_path, "Data_Entry_2017.csv"), index_col="Image Index")
+    data = hdf5_file.create_dataset("data", shape=(len(img_paths), 256, 256), dtype="uint8")
+    labels = hdf5_file.create_dataset("labels", shape=(len(img_paths)), dtype="int")
 
-images_dirs = [
-    "images_001",
-    "images_002",
-    "images_003",
-    "images_004",
-    "images_005",
-    "images_006",
-    "images_007",
-    "images_008",
-    "images_009",
-    "images_010",
-    "images_011",
-    "images_012",
-]
+    for index, img_path in enumerate(tqdm(img_paths)):
+        img_data = archive.read(img_path)
+        img_bytes = io.BytesIO(img_data)
 
-meta["path"] = None
-for img_dir in tqdm(images_dirs):
-    images_paths = glob.glob(os.path.join(data_path, img_dir, "images", "*.png"))
-    for img_path in tqdm(images_paths, leave=False):
-        name = os.path.basename(img_path)
-        meta.loc[name, "path"] = img_path
+        pil_img = Image.open(img_bytes).convert("L")
+        pil_img = pil_img.resize((256, 256), Image.Resampling.LANCZOS)
 
-meta.dropna(subset="path", inplace=True)
+        data[index] = np.asarray(pil_img).astype("uint8")
 
-name_to_label = {
-    "AP": 0,
-    "PA": 1
-}
-meta["label"] = meta["View Position"].replace(name_to_label)
+        fname = os.path.basename(img_path)
+        view_position = meta.loc[fname, "View Position"]
 
-meta[["path", "label"]].to_pickle(os.path.join(data_path, "Data_Entry_2017.pkl"))
+        view_position_to_label = {
+            "AP": 0,
+            "PA": 1
+        }
+
+        labels[index] = view_position_to_label[view_position]

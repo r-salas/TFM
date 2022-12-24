@@ -6,16 +6,18 @@
 
 import os
 import gzip
+import pydicom
 
-import numpy as np
 import torch
 import shutil
 import zipfile
+import numpy as np
 import pandas as pd
 
 from tqdm import tqdm
 from typing import Optional
 from PIL import Image, ImageMath
+from pydicom.pixel_data_handlers.util import apply_voi_lut
 
 
 def get_default_device():
@@ -52,15 +54,15 @@ def convert_I_to_L(im: Image):
     return ImageMath.eval('im >> 8', im=im.convert('I')).convert('L')
 
 
-def undersample(df, label_col, random_state: Optional[int] = None):
-    min_samples = df.groupby(label_col).size().min()
+def undersample(labels, random_state: Optional[int] = None):
+    min_samples = labels.groupby(labels).size().min()
 
-    undersample_data = []
-    for label, label_df in df.groupby(label_col):
+    undersample_labels = []
+    for label, label_df in labels.groupby(labels):
         label_df = label_df.sample(min_samples, random_state=random_state)
-        undersample_data.append(label_df)
+        undersample_labels.append(label_df)
 
-    return pd.concat(undersample_data)
+    return pd.concat(undersample_labels)
 
 
 def pil_grayscale_to_rgb(pil_img):
@@ -76,3 +78,33 @@ def radimagenet_transforms(pil_img):
         img = img[:, :, None]
 
     return torch.from_numpy(img).to(torch.float32)
+
+
+def read_dicom(path, voi_lut=True, fix_monochrome=True):
+    dicom = pydicom.read_file(path)
+
+    # VOI LUT (if available by DICOM device) is used to transform raw DICOM data to "human-friendly" view
+    if voi_lut:
+        data = apply_voi_lut(dicom.pixel_array, dicom)
+    else:
+        data = dicom.pixel_array
+
+    # depending on this value, X-ray may look inverted - fix that:
+    if fix_monochrome and dicom.PhotometricInterpretation == "MONOCHROME1":
+        data = np.amax(data) - data
+
+    data = data - np.min(data)
+    data = data / np.max(data)
+    data = (data * 255).astype(np.uint8)
+
+    return data
+
+
+def remove_prefix(text, prefix):
+    if text.startswith(prefix):
+        return text[len(prefix):]
+    return text  # or whatever
+
+
+def remove_suffix(text, suffix):
+    return text[:-len(suffix)] if text.endswith(suffix) and len(suffix) != 0 else text

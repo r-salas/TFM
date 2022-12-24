@@ -6,6 +6,7 @@
 
 import io
 import os
+import torch
 import onnx2torch
 import numpy as np
 import torchmetrics
@@ -23,7 +24,7 @@ from config import DATA_ROOT_DIR
 from torchvision.models import densenet121, resnet50, DenseNet121_Weights, ResNet50_Weights
 
 
-class Model(pl.LightningModule):
+class ClassificationModel(pl.LightningModule):
 
     def __init__(self, optimizer_type, learning_rate, transfer_learning_model, transfer_learning_technique, names):
         super().__init__()
@@ -165,3 +166,77 @@ class Model(pl.LightningModule):
             return optim.RMSprop(self.parameters(), lr=self.learning_rate)
         else:
             raise NotImplementedError()
+
+
+class AutoEncoderModel(pl.LightningModule):
+    def __init__(self, latent_vector_size: int = 512, learning_rate: float = 1e-3, loss_type: str = "mae"):
+        super().__init__()
+
+        self.loss_type = loss_type
+        self.latent_vector_size = latent_vector_size
+        self.learning_rate = learning_rate
+
+        self.save_hyperparameters()
+
+        self.encoder = nn.Sequential(
+            nn.Conv2d(1, 16, 3, padding=1),
+            nn.ReLU(),
+            nn.MaxPool2d(2, 2),
+            nn.Conv2d(16, 4, 3, padding=1),
+            nn.ReLU(),
+            nn.MaxPool2d(2, 2),
+
+            nn.Flatten(start_dim=1),
+
+            nn.Linear(4 * 64 * 64, 1024),
+            nn.ReLU(),
+            nn.Linear(1024, latent_vector_size)
+        )
+
+        self.decoder = nn.Sequential(
+            nn.Linear(latent_vector_size, 1024),
+            nn.ReLU(),
+            nn.Linear(1024, 4 * 64 * 64),
+            nn.ReLU(),
+
+            nn.Unflatten(dim=1, unflattened_size=(4, 64, 64)),
+
+            nn.ConvTranspose2d(4, 16, 2, stride=2),
+            nn.ReLU(),
+            nn.ConvTranspose2d(16, 1, 2, stride=2),
+            nn.Sigmoid()
+        )
+
+        if loss_type == "mae":
+            self.loss_fn = nn.L1Loss()
+            self.loss_sample_fn = nn.L1Loss(reduction="none")
+        elif loss_type == "mse":
+            self.loss_fn = nn.MSELoss()
+            self.loss_sample_fn = nn.MSELoss(reduction="none")
+        else:
+            raise NotImplementedError()
+
+    def forward(self, x):
+        x = self.encoder(x)
+        x = self.decoder(x)
+        return x
+
+    def training_step(self, batch, batch_idx):
+        pred_batch = self(batch[0])
+        loss = self.loss_fn(pred_batch, batch[0])
+        self.log("train_loss", loss)
+        return loss
+
+    def validation_step(self, batch, batch_idx):
+        pred_batch = self(batch[0])
+        loss = self.loss_fn(pred_batch, batch[0])
+        self.log("val_loss", loss)
+
+    def predict_step(self, batch, batch_idx, dataloader_idx=0):
+        pred_batch = self(batch[0])
+        loss = self.loss_sample_fn(pred_batch, batch[0])
+        loss = torch.mean(loss, [1, 2, 3])
+        return loss
+
+    def configure_optimizers(self):
+        return optim.Adam(self.parameters(), lr=self.learning_rate)
